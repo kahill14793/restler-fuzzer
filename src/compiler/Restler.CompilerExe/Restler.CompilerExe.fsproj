@@ -19,6 +19,7 @@
     <Content Include="packages.lock.json" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="FSharp.Data" Version="4.2.8" />
     <ProjectReference Include="..\Restler.Compiler\Restler.Compiler.fsproj" />
     <PackageReference Include="Microsoft.FSharpLu.Json" Version="0.11.6" />
     <PackageReference Include="NJsonSchema" Version="10.0.27" />

@@ -13,6 +13,7 @@ open Restler.Utilities.Logging
 open Restler.ApiResourceTypes
 open Restler.DependencyAnalysisTypes
 open Restler.Annotations
+open FSharp.Data
 
 exception UnsupportedType of string
 exception InvalidSwaggerEndpoint
@@ -293,6 +294,9 @@ let findProducerWithResourceName
     let consumerResourceName = consumer.id.ResourceName
 
     let consumerEndpoint = consumer.id.RequestId.endpoint
+    // thond: them bien lay thong tin method
+    let consumerMethod = consumer.id.RequestId.method
+
     let bracketedConsumerResourceName =
         if consumer.parameterKind = ParameterKind.Path then
             sprintf "{%s}" consumerResourceName
@@ -330,6 +334,29 @@ let findProducerWithResourceName
                 | Some ep -> ep.Split([|'/'|]) |> Seq.last |> Some
             producerEndpoint, producerContainer
 
+
+    // thond: start thu doc file csv
+    let mutable prodEndpoint = "";
+    let mutable prodMethod = "";
+    let mutable prodField = "";
+
+    let msft = CsvFile.Load("C:\\Users\\Admin\\Desktop\\output_log_analyze.csv").Cache()
+    for row in msft.Rows |> Seq.truncate 10 do
+        let conUri = row.[1];
+        let conMethod = row.[2];
+        let conField = row.[4];
+
+        if conUri = consumerEndpoint 
+            && conMethod = consumerMethod.ToString().ToLower() 
+            && conField = consumerResourceName
+        then
+            prodEndpoint <- row.[8];
+            prodMethod <- row.[9];
+            prodField <- row.[10];
+    // thond: end thu doc file csv
+
+
+    // thond: start modify find dependency
     let matchingResourceProducers, matchingResourceProducersByEndpoint =
         // The logic below guards against including cases where the container returns a
         // matching field which belongs to a different class. For example, imagine
@@ -340,18 +367,41 @@ let findProducerWithResourceName
         // match a field named "type" returned by  dnsZones/{zoneName} which will
         // be a zone type and not a record-type.
         // accounts starts with 'account'
-        match producerContainer with
-        | None ->
-            Seq.empty, Seq.empty
-        | Some pc when pc.StartsWith("{") ->
-             Seq.empty, Seq.empty
-        | Some pc ->
-            producers.getSortedByMatchProducers(producerParameterName, true),
-            if producerEndpoint.IsSome then
-                producers.getIndexedByEndpointProducers(producerParameterName, producerEndpoint.Value,
-                                                        [OperationMethod.Put; OperationMethod.Post;
-                                                         OperationMethod.Get])
-            else Seq.empty
+        match prodEndpoint, prodMethod, prodField with
+        | "", "", "" ->
+            match producerContainer with
+            | None ->
+                Seq.empty, Seq.empty
+            | Some pc when pc.StartsWith("{") ->
+                Seq.empty, Seq.empty
+            | Some pc ->
+                producers.getSortedByMatchProducers(producerParameterName, true),
+                if producerEndpoint.IsSome then
+                    producers.getIndexedByEndpointProducers(producerParameterName, producerEndpoint.Value,
+                                                            [OperationMethod.Put; OperationMethod.Post;
+                                                            OperationMethod.Get])
+                else Seq.empty
+        | endpoint, method, field ->
+            printfn "%s - %s - %s" endpoint method field
+            match producerContainer with
+            | None ->
+                Seq.empty, Seq.empty
+            | Some pc when pc.StartsWith("{") ->
+                Seq.empty, Seq.empty
+            | Some pc ->
+                producers.getSortedByMatchProducers(field, true),
+                if producerEndpoint.IsSome then
+                    
+                    let operationMethod = 
+                        match method with
+                        | "get" -> OperationMethod.Get
+                        | "post" -> OperationMethod.Post
+                        | "put" -> OperationMethod.Put
+                        | m -> OperationMethod.Get;
+                    
+                    producers.getIndexedByEndpointProducers(field, endpoint, [ operationMethod ])
+                else Seq.empty
+    // thond: end modify find dependency
 
     let dictionary, annotationProducer =
         let ann = consumer.annotation
@@ -1111,7 +1161,7 @@ let extractDependencies (requestData:(RequestId*RequestData)[])
 
     let pathConsumers =
         requestData
-        |> Array.Parallel.map
+        |> Array.map
             (fun (r, rd) -> r, getParameterConsumers r ParameterKind.Path rd.requestParameters.path true)
 
     logTimingInfo "Getting query consumers..."
@@ -1356,13 +1406,19 @@ let extractDependencies (requestData:(RequestId*RequestData)[])
     let newCustomPayloadUuidSuffix =
         let generatedSuffixes =
             consumers
-            |> Array.Parallel.map
+
+            // thond: rao xu ly song song de chay tuan tu de debug
+            // |> Array.Parallel.map
+            |> Array.map
                 (fun (requestId, requestConsumers) ->
                     // First, look for producers in a different payload
                     let requestConsumers = requestConsumers |> Seq.toArray
                     let newUuidSuffixes =
                         requestConsumers
-                        |> Array.Parallel.map
+
+                        // thond: rao xu ly song song de chay tuan tu de debug
+                        // |> Array.Parallel.map
+                        |> Array.map
                             (fun cx -> getDependenciesForConsumer cx)
                         |> Seq.map (fun newDict ->
                                         newDict.restler_custom_payload_uuid4_suffix.Value
